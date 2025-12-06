@@ -67,8 +67,11 @@ pm.execute_notebook(
         PLOT_TOP_CONF=False,
         PLOT_SCATTER=False,
         PLOT_NETWORK=False,
+        PLOT_PLOTLY_NETWORK=False,
+        PLOT_PLOTLY_SCATTER=False,  
     ),
     kernel_name="python3",
 )
+
 
 print("Đã chạy xong pipeline")

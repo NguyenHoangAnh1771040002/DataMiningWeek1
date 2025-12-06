@@ -16,6 +16,9 @@ import seaborn as sns
 from scipy import stats
 from mlxtend.frequent_patterns import apriori, association_rules
 from sklearn.preprocessing import StandardScaler
+import plotly.express as px
+import networkx as nx
+
 
 # =========================================================
 # 1. DATA CLEANER
@@ -433,7 +436,7 @@ class AssociationRulesMiner:
 
 
 # =========================================================
-# 4. DATA VISUALIZER
+# 4. DATA VISUALIZER (EDA + RFM + APRIORI)
 # =========================================================
 
 class DataVisualizer:
@@ -442,7 +445,8 @@ class DataVisualizer:
     shopping behavior analysis.
 
     This class provides methods for plotting various aspects of the data
-    including temporal patterns, customer behavior, and RFM analysis.
+    including temporal patterns, customer behavior, RFM analysis,
+    và trực quan hoá luật kết hợp (Apriori).
     """
 
     def __init__(self):
@@ -589,5 +593,403 @@ class DataVisualizer:
         axes[2].set_title("Phân phối Monetary (Tổng chi tiêu)")
         axes[2].set_xlabel("Tổng chi tiêu (GBP)")
 
+        plt.tight_layout()
+        plt.show()
+
+# Apriori visualizations
+
+    @staticmethod
+    def _itemset_to_str(itemset):
+        """
+        Chuyển một itemset (frozenset, set, list, tuple) thành chuỗi có thể đọc được.
+
+        Args:
+            itemset: tập mục dưới dạng tập, danh sách, frozenset, v.v.
+        """
+        if isinstance(itemset, (set, frozenset, list, tuple)):
+            return ", ".join(sorted(map(str, itemset)))
+        return str(itemset)
+
+    def plot_top_frequent_itemsets(
+        self,
+        frequent_itemsets: pd.DataFrame,
+        top_n: int = 20,
+        min_len: int | None = None,
+        max_len: int | None = None,
+        title: str = "Top frequent itemsets theo support",
+    ):
+        """
+        Vẽ biểu đồ cột thể hiện các tập mục phổ biến nhất theo support.
+
+        Args:
+            frequent_itemsets: DataFrame kết quả từ mlxtend.frequent_patterns.apriori
+                với tối thiểu hai cột 'itemsets' và 'support'.
+            top_n: số lượng itemset hiển thị.
+            min_len: chỉ lấy các itemset có độ dài >= min_len (nếu không None).
+            max_len: chỉ lấy các itemset có độ dài <= max_len (nếu không None).
+            title: tiêu đề biểu đồ.
+        """
+        if "itemsets" not in frequent_itemsets.columns or "support" not in frequent_itemsets.columns:
+            raise ValueError("frequent_itemsets cần có cột 'itemsets' và 'support'.")
+
+        fi = frequent_itemsets.copy()
+
+        if min_len is not None:
+            fi = fi[fi["itemsets"].apply(len) >= min_len]
+        if max_len is not None:
+            fi = fi[fi["itemsets"].apply(len) <= max_len]
+
+        fi = fi.sort_values("support", ascending=False).head(top_n).copy()
+        if fi.empty:
+            print("Không có itemset nào thỏa mãn điều kiện lọc.")
+            return
+
+        fi["itemset_str"] = fi["itemsets"].apply(self._itemset_to_str)
+
+        plt.figure(figsize=(12, max(4, 0.4 * len(fi))))
+        sns.barplot(data=fi, x="support", y="itemset_str")
+        plt.title(title)
+        plt.xlabel("Support")
+        plt.ylabel("Itemset")
+        plt.tight_layout()
+        plt.show()
+
+    def plot_itemset_length_distribution(
+        self,
+        frequent_itemsets: pd.DataFrame,
+        title: str = "Phân phối độ dài các tập mục (itemset length)",
+    ):
+        """
+        Vẽ phân phối số lượng itemset theo độ dài (1-itemset, 2-itemset, ...).
+
+        Args:
+            frequent_itemsets: DataFrame kết quả từ apriori() với cột 'itemsets'.
+            title: tiêu đề biểu đồ.
+        """
+        if "itemsets" not in frequent_itemsets.columns:
+            raise ValueError("frequent_itemsets cần có cột 'itemsets'.")
+
+        lengths = frequent_itemsets["itemsets"].apply(len)
+        length_counts = lengths.value_counts().sort_index()
+
+        plt.figure(figsize=(8, 5))
+        sns.barplot(x=length_counts.index, y=length_counts.values)
+        plt.title(title)
+        plt.xlabel("Độ dài itemset")
+        plt.ylabel("Số lượng itemset")
+        plt.xticks(length_counts.index)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_top_rules_bar(
+        self,
+        rules_df: pd.DataFrame,
+        top_n: int = 20,
+        sort_by: str = "lift",
+        title: str = "Top luật kết hợp",
+    ):
+        """
+        Vẽ biểu đồ cột thể hiện top_n luật kết hợp theo một metric (lift/confidence/support).
+
+        Args:
+            rules_df: DataFrame kết quả từ association_rules() và đã có cột 'rule_str'.
+            top_n: số luật hiển thị.
+            sort_by: cột dùng để sắp xếp ('lift', 'confidence', 'support', ...).
+            title: tiêu đề chung của biểu đồ.
+        """
+        if "rule_str" not in rules_df.columns:
+            raise ValueError("rules_df cần có cột 'rule_str' (gọi add_readable_rule_str() trước).")
+        if sort_by not in rules_df.columns:
+            raise ValueError(f"rules_df không có cột '{sort_by}' để sắp xếp.")
+
+        df = rules_df.sort_values(sort_by, ascending=False).head(top_n).copy()
+        if df.empty:
+            print("Không có luật nào để vẽ.")
+            return
+
+        plt.figure(figsize=(12, max(4, 0.4 * len(df))))
+        sns.barplot(data=df, x=sort_by, y="rule_str")
+        plt.title(f"{title} (theo {sort_by}) - Top {len(df)} luật")
+        plt.xlabel(sort_by.capitalize())
+        plt.ylabel("Luật (antecedent → consequent)")
+        plt.tight_layout()
+        plt.show()
+
+    def plot_top_rules_lift(
+        self,
+        rules_df: pd.DataFrame,
+        top_n: int = 20,
+        title_prefix: str = "Top luật theo Lift (Apriori)",
+    ):
+        """
+        Vẽ biểu đồ top luật theo chỉ số Lift.
+
+        Args:
+            rules_df: DataFrame, thường là rules_filtered_ap.
+            top_n: số luật lấy top theo lift.
+            title_prefix: phần tiêu đề, sẽ gắn thêm số luật thực tế.
+        """
+        if rules_df is None or rules_df.empty:
+            print("Không có luật nào sau khi lọc để vẽ top lift.")
+            return
+
+        self.plot_top_rules_bar(
+            rules_df=rules_df,
+            top_n=top_n,
+            sort_by="lift",
+            title=title_prefix,
+        )
+
+    def plot_top_rules_confidence(
+        self,
+        rules_df: pd.DataFrame,
+        top_n: int = 20,
+        title_prefix: str = "Top luật theo Confidence (Apriori)",
+    ):
+        """
+        Vẽ biểu đồ top luật theo chỉ số Confidence (tương ứng code gốc ở cell 17).
+
+        Args:
+            rules_df: DataFrame, thường là rules_filtered_ap.
+            top_n: số luật lấy top theo confidence.
+            title_prefix: phần tiêu đề, sẽ gắn thêm số luật thực tế.
+        """
+        if rules_df is None or rules_df.empty:
+            print("Không có luật nào sau khi lọc để vẽ top confidence.")
+            return
+
+        self.plot_top_rules_bar(
+            rules_df=rules_df,
+            top_n=top_n,
+            sort_by="confidence",
+            title=title_prefix,
+        )
+
+    def plot_rules_support_confidence_scatter(
+        self,
+        rules_df: pd.DataFrame,
+        title: str = "Phân bố luật: Support vs Confidence (màu = Lift)",
+        point_size: int = 40,
+    ):
+        """
+        Vẽ scatter plot Support–Confidence, màu theo Lift
+
+        Args:
+            rules_df: DataFrame, thường là rules_filtered_ap.
+            title: tiêu đề biểu đồ.
+            point_size: kích thước điểm (tham số s của matplotlib).
+        """
+        if rules_df is None or rules_df.empty:
+            print("Không có luật nào sau khi lọc để vẽ scatter.")
+            return
+
+        plt.figure(figsize=(8, 6))
+        scatter = plt.scatter(
+            rules_df["support"],
+            rules_df["confidence"],
+            c=rules_df["lift"],
+            s=point_size,
+            alpha=0.7,
+        )
+        plt.colorbar(scatter, label="Lift")
+        plt.xlabel("Support")
+        plt.ylabel("Confidence")
+        plt.title(title)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_pairwise_lift_heatmap(
+        self,
+        rules_df: pd.DataFrame,
+        top_items: int = 15,
+        metric: str = "lift",
+        title: str = "Heatmap lift giữa các cặp sản phẩm (1→1)",
+    ):
+        """
+        Vẽ heatmap lift (hoặc metric khác) cho các luật 1 sản phẩm → 1 sản phẩm.
+
+        Args:
+            rules_df: DataFrame kết quả từ association_rules() + add_readable_rule_str().
+            top_items: số lượng sản phẩm phổ biến nhất xét đến (theo tần suất xuất hiện trong luật).
+            metric: tên cột để vẽ (thường là 'lift' hoặc 'confidence').
+            title: tiêu đề biểu đồ.
+        """
+        required_cols = {"antecedents", "consequents", metric}
+        if not required_cols.issubset(set(rules_df.columns)):
+            raise ValueError(f"rules_df cần có các cột: {required_cols}")
+
+        # Chỉ giữ các luật 1 sản phẩm → 1 sản phẩm
+        single_rules = rules_df[
+            (rules_df["antecedents"].apply(len) == 1)
+            & (rules_df["consequents"].apply(len) == 1)
+        ].copy()
+
+        if single_rules.empty:
+            print("Không có luật 1→1 nào để vẽ heatmap.")
+            return
+
+        # Tạo tên sản phẩm dạng chuỗi
+        single_rules["antecedent_str"] = single_rules["antecedents"].apply(
+            lambda x: list(x)[0]
+        )
+        single_rules["consequent_str"] = single_rules["consequents"].apply(
+            lambda x: list(x)[0]
+        )
+
+        # Lấy top_items sản phẩm xuất hiện nhiều nhất trong luật
+        all_items = pd.concat(
+            [single_rules["antecedent_str"], single_rules["consequent_str"]]
+        )
+        top_item_names = all_items.value_counts().head(top_items).index
+
+        df_filtered = single_rules[
+            single_rules["antecedent_str"].isin(top_item_names)
+            & single_rules["consequent_str"].isin(top_item_names)
+        ]
+
+        if df_filtered.empty:
+            print("Sau khi lọc top_items, không còn luật nào để vẽ heatmap.")
+            return
+
+        pivot = df_filtered.pivot_table(
+            index="antecedent_str",
+            columns="consequent_str",
+            values=metric,
+            aggfunc="max",
+        )
+
+        plt.figure(figsize=(12, 8))
+        sns.heatmap(
+            pivot,
+            annot=True,
+            fmt=".2f",
+            cmap="viridis",
+            linewidths=0.5,
+        )
+        plt.title(title + f" (metric = {metric})")
+        plt.xlabel("Consequent")
+        plt.ylabel("Antecedent")
+        plt.tight_layout()
+        plt.show()
+    def plot_rules_support_confidence_scatter_interactive(
+        self,
+        rules_df: pd.DataFrame,
+        title: str = "Biểu đồ tương tác: Support vs Confidence (màu & kích thước = Lift)"
+    ):
+        """
+        Biểu đồ scatter tương tác bằng Plotly:
+        - Trục X: support
+        - Trục Y: confidence
+        - Màu & kích thước điểm: lift
+        - hover hiển thị rule_str
+
+        """
+        if rules_df is None or rules_df.empty:
+            print("Không có luật nào sau khi lọc để vẽ scatter Plotly.")
+            return
+
+        # Đảm bảo có rule_str (nếu chưa thì gợi ý)
+        if "rule_str" not in rules_df.columns:
+            print("rules_df chưa có cột 'rule_str'. Hãy gọi miner.add_readable_rule_str() trước.")
+            return
+
+        fig = px.scatter(
+            rules_df,
+            x="support",
+            y="confidence",
+            color="lift",
+            size="lift",
+            hover_name="rule_str",
+            title=title,
+            labels={
+                "support": "Support",
+                "confidence": "Confidence",
+                "lift": "Lift",
+            },
+        )
+        fig.show()
+
+    def plot_rules_network(
+        self,
+        rules_df: pd.DataFrame,
+        max_rules: int | None = 100,
+        min_lift: float | None = None,
+        title: str = "Mạng lưới các luật kết hợp (Arrow: antecedent → consequent)",
+        figsize: tuple = (12, 8),
+    ):
+        """
+        Vẽ network graph các luật kết hợp bằng networkx:
+        - Node: sản phẩm
+        - Edge có hướng: antecedent -> consequent
+        - Độ dày cạnh tỷ lệ với lift
+
+        """
+        if rules_df is None or rules_df.empty:
+            print("Không có luật nào sau khi lọc để vẽ network graph.")
+            return
+
+        required_cols = {"antecedents", "consequents", "lift"}
+        if not required_cols.issubset(rules_df.columns):
+            raise ValueError(f"rules_df cần có các cột: {required_cols}")
+
+        # Lọc theo lift nếu có
+        df = rules_df.copy()
+        if min_lift is not None:
+            df = df[df["lift"] >= min_lift]
+
+        if df.empty:
+            print("Không còn luật nào sau khi lọc theo min_lift để vẽ network graph.")
+            return
+
+        # Giới hạn số luật để network không quá rối
+        if max_rules is not None:
+            df = df.sort_values("lift", ascending=False).head(max_rules)
+
+        G = nx.DiGraph()
+
+        # Tạo node + edge
+        edges = []
+        for _, row in df.iterrows():
+            antecedents = list(row["antecedents"])
+            consequents = list(row["consequents"])
+            lift_value = row["lift"]
+
+            for a in antecedents:
+                for c in consequents:
+                    G.add_node(a)
+                    G.add_node(c)
+                    G.add_edge(a, c, weight=lift_value)
+                    edges.append((a, c, lift_value))
+
+        if not edges:
+            print("Không tạo được cạnh nào cho network graph.")
+            return
+
+        # Layout
+        plt.figure(figsize=figsize)
+        pos = nx.spring_layout(G, k=0.5, iterations=50, seed=42)
+
+        # Tính độ dày cạnh
+        weights = [w for (_, _, w) in edges]
+        max_w = max(weights)
+        norm_widths = [w / max_w * 2 for w in weights]  # scale về khoảng [0, 2]
+
+        # Vẽ node
+        nx.draw_networkx_nodes(G, pos, node_size=800, node_color="lightblue")
+        # Vẽ label
+        nx.draw_networkx_labels(G, pos, font_size=9)
+
+        # Vẽ edge có hướng
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            arrowstyle="->",
+            arrowsize=15,
+            width=norm_widths,
+            edge_color="gray",
+        )
+
+        plt.title(title)
+        plt.axis("off")
         plt.tight_layout()
         plt.show()
