@@ -63,12 +63,12 @@ pm.execute_notebook(
         TOP_N_RULES=20,
 
         # Tắt plot khi chạy batch (bật = True nếu muốn xem hình)
-        PLOT_TOP_LIFT=False,
-        PLOT_TOP_CONF=False,
-        PLOT_SCATTER=False,
-        PLOT_NETWORK=False,
-        PLOT_PLOTLY_NETWORK=False,
-        PLOT_PLOTLY_SCATTER=False,  
+        PLOT_TOP_LIFT=True,
+        PLOT_TOP_CONF=True,
+        PLOT_SCATTER=True,
+        PLOT_NETWORK=True,
+        PLOT_PLOTLY_NETWORK=True,
+        PLOT_PLOTLY_SCATTER=True,
     ),
     kernel_name="python3",
 )
