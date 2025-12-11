@@ -385,9 +385,9 @@ class AssociationRulesMiner:
 
     def filter_rules(
         self,
-        min_support: float = None,
-        min_confidence: float = None,
-        min_lift: float = None,
+        min_support: float = 0.05,
+        min_confidence: float = 0.6,
+        min_lift: float = 1.5,
         max_len_antecedents: int = None,
         max_len_consequents: int = None,
     ) -> pd.DataFrame:

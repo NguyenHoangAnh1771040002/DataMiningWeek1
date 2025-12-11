@@ -98,7 +98,15 @@ FILTER_MIN_CONF=0.3
 FILTER_MIN_LIFT=1.2
 ```
 
-Hoặc sửa trong cell PARAMETERS của mỗi notebook để chạy với cấu hình khác nhau.
+#### Tác động của các tham số
+
+- **`MIN_SUPPORT`**: Giá trị này quyết định tần suất tối thiểu của các tập mục phổ biến. Giá trị thấp sẽ tạo ra nhiều tập mục hơn nhưng có thể làm tăng thời gian tính toán và tạo ra nhiều nhiễu. Giá trị cao sẽ lọc bớt các tập mục ít phổ biến nhưng có thể bỏ sót các tập mục quan trọng.
+
+- **`FILTER_MIN_CONF`**: Ngưỡng tối thiểu cho độ tin cậy của luật. Giá trị cao đảm bảo các luật mạnh hơn nhưng có thể giảm số lượng luật được sinh ra.
+
+- **`FILTER_MIN_LIFT`**: Giá trị này lọc các luật dựa trên chỉ số Lift, thể hiện mức độ mạnh mẽ của mối quan hệ so với ngẫu nhiên. Giá trị cao giúp chọn các luật có ý nghĩa hơn nhưng có thể loại bỏ các luật tiềm năng.
+
+Việc điều chỉnh các tham số này cần cân nhắc giữa chất lượng và số lượng của các luật được sinh ra. Nên thử nghiệm với các giá trị khác nhau để tìm cấu hình phù hợp nhất với dữ liệu và mục tiêu phân tích.
 
 ### Visualization & Results
 Notebook 03 hiển thị các biểu đồ sau:
