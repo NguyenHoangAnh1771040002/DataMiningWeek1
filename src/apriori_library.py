@@ -323,6 +323,7 @@ class AssociationRulesMiner:
             min_support=min_support,
             use_colnames=use_colnames,
             max_len=max_len,
+            low_memory=True,
         )
 
         fi.sort_values(by="support", ascending=False, inplace=True)
@@ -385,9 +386,9 @@ class AssociationRulesMiner:
 
     def filter_rules(
         self,
-        min_support: float = 0.05,
-        min_confidence: float = 0.6,
-        min_lift: float = 1.5,
+        min_support: float = None,
+        min_confidence: float = None,
+        min_lift: float = None,
         max_len_antecedents: int = None,
         max_len_consequents: int = None,
     ) -> pd.DataFrame:
