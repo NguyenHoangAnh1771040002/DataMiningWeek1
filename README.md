@@ -26,14 +26,16 @@ Phân tích dữ liệu bán lẻ để tìm ra mối quan hệ giữa các sả
 ## Project Structure
 
 ```text
-shopping_cart_analysis/
+DataMiningWeek1/
 ├── data/
 │   ├── raw/
 │   │   └── online_retail.csv
 │   └── processed/
 │       ├── cleaned_uk_data.csv
 │       ├── basket_bool.parquet
-│       └── rules_apriori_filtered.csv
+│       ├── rules_apriori_filtered.csv
+│       └── sweeps/
+│           └── rules_<experiment>_<timestamp>.csv
 │
 ├── notebooks/
 │   ├── preprocessing_and_eda.ipynb
@@ -42,12 +44,15 @@ shopping_cart_analysis/
 │   └── runs/
 │       ├── preprocessing_and_eda_run.ipynb
 │       ├── basket_preparation_run.ipynb
-│       └── apriori_modelling_run.ipynb
+│       ├── apriori_modelling_run.ipynb
+│       └── sweeps/
+│           └── apriori_modelling_<experiment>_<timestamp>.ipynb
 │
 ├── src/
 │   └── apriori_library.py
 │
 ├── run_papermill.py
+├── PARAMETER_SWEEP_REPORT.md
 ├── requirements.txt
 └── README.md
 ```
@@ -58,28 +63,33 @@ shopping_cart_analysis/
 
 ```bash
 git clone <your_repo_url>
-cd shopping_cart_analysis
+cd DataMiningWeek1
 pip install -r requirements.txt
-Data Preparation
-Đặt file gốc vào:
 ```
+
+## Data Preparation
+
+Đặt file gốc vào:
 
 ```bash
 data/raw/online_retail.csv
-File output sẽ được sinh tự động vào:
 ```
+
+File output sẽ được sinh tự động vào:
 
 ```bash
 data/processed/
 ```
 
-Run Pipeline (Recommended)
-Chạy toàn bộ phân tích chỉ với 1 lệnh:
+## Run Pipeline (Recommended)
+
+Chạy toàn bộ pipeline (bao gồm **sweep tham số**) chỉ với 1 lệnh:
 
 ```bash
 python run_papermill.py
 ```
-Kết quả sinh ra:
+
+Kết quả baseline sinh ra:
 
 ```bash
 data/processed/cleaned_uk_data.csv
@@ -88,8 +98,23 @@ data/processed/rules_apriori_filtered.csv
 notebooks/runs/apriori_modelling_run.ipynb
 ```
 
+Kết quả sweep (theo từng cấu hình) được lưu vào:
+
+```bash
+data/processed/sweeps/
+notebooks/runs/sweeps/
+```
+
+File báo cáo tổng hợp sweep:
+
+```bash
+PARAMETER_SWEEP_REPORT.md
+```
+
 ### Changing Parameters
-Các tham số có thể chỉnh trong run_papermill.py:
+Các tham số sweep đã được cấu hình sẵn trong `run_papermill.py` (mục `experiments`).
+
+Các tham số chính:
 
 ```python
 MIN_SUPPORT=0.01
@@ -124,7 +149,7 @@ Biểu đồ Plotly tương tác
 Bạn có thể export sang HTML:
 
 ```bash
-jupyter nbconvert notebooks/runs/priori_modelling_run.ipynb --to html
+jupyter nbconvert notebooks/runs/apriori_modelling_run.ipynb --to html
 ```
 
 ### Ứng dụng thực tế
