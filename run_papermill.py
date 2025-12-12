@@ -1,14 +1,14 @@
 import papermill as pm
 import os
 import datetime as dt
+import shutil
+import re
 
 import pandas as pd
 
 from papermill.exceptions import PapermillExecutionError
 
 os.makedirs("notebooks/runs", exist_ok=True)
-os.makedirs("notebooks/runs/sweeps", exist_ok=True)
-os.makedirs("data/processed/sweeps", exist_ok=True)
 
 # run_preprocessing_and_eda.py
 pm.execute_notebook(
@@ -62,7 +62,159 @@ def _format_float(x) -> str:
         return ""
 
 
+def _categorize_item(desc: str) -> str:
+    if desc is None:
+        return "Other"
+    s = str(desc).strip().upper()
+    if not s:
+        return "Other"
+
+    rules = [
+        ("Christmas", ["CHRISTMAS", "XMAS", "SANTA", "REINDEER", "SNOW", "TREE", "NOEL"]),
+        ("Home Decor", ["DECOR", "DECORATION", "HANGING", "LANTERN", "CANDLE", "CANDLES", "HEART", "LIGHT", "MIRROR", "BUNTING"]),
+        ("Kitchen & Dining", ["MUG", "CUP", "TEA", "TOWEL", "PLATE", "BOWL", "KITCHEN", "NAPKIN", "GLASS", "TRAY"]),
+        ("Gift Wrap & Bags", ["BAG", "GIFT", "WRAP", "BOX", "RIBBON", "TAG", "CARD"]),
+        ("Stationery & Crafts", ["PAPER", "NOTEBOOK", "PENCIL", "PEN", "STICKER", "CRAFT"]),
+        ("Garden & Herbs", ["HERB", "GARDEN", "PLANT", "FLOWER"]),
+    ]
+
+    for cat, keywords in rules:
+        if any(k in s for k in keywords):
+            return cat
+    return "Other"
+
+
+def _rule_category(label: str) -> str:
+    parts = [p.strip() for p in str(label).split(",") if p.strip()]
+    if not parts:
+        return "Other"
+    cats = {_categorize_item(p) for p in parts}
+    if len(cats) == 1:
+        return list(cats)[0]
+    return "Mixed"
+
+
+def _category_insight_from_rules(rules_df: pd.DataFrame) -> dict:
+    if rules_df is None or rules_df.empty:
+        return dict(status="EMPTY")
+
+    required = {"antecedents_str", "consequents_str", "lift", "confidence", "support"}
+    if not required.issubset(set(rules_df.columns)):
+        return dict(status="MISSING_COLUMNS")
+
+    df = rules_df[["antecedents_str", "consequents_str", "lift", "confidence", "support"]].copy()
+    df["ante_cat"] = df["antecedents_str"].apply(_rule_category)
+    df["cons_cat"] = df["consequents_str"].apply(_rule_category)
+    df["is_within_category"] = (df["ante_cat"] == df["cons_cat"]) & (~df["ante_cat"].isin(["Mixed"]))
+
+    total_rules = int(len(df))
+    within_rules = int(df["is_within_category"].sum())
+    cross_rules = total_rules - within_rules
+
+    pair_stats = (
+        df.groupby(["ante_cat", "cons_cat"])
+        .agg(
+            n_rules=("lift", "size"),
+            avg_lift=("lift", "mean"),
+            avg_conf=("confidence", "mean"),
+            median_support=("support", "median"),
+        )
+        .reset_index()
+    )
+    pair_stats.sort_values(["n_rules", "avg_lift"], ascending=[False, False], inplace=True)
+
+    top_pairs = pair_stats.head(10)
+    top_pairs_by_lift = (
+        pair_stats[pair_stats["n_rules"] >= 5]
+        .sort_values("avg_lift", ascending=False)
+        .head(10)
+    )
+
+    cat_counts = (
+        pd.concat(
+            [
+                df[["ante_cat"]].rename(columns={"ante_cat": "cat"}),
+                df[["cons_cat"]].rename(columns={"cons_cat": "cat"}),
+            ],
+            ignore_index=True,
+        )
+        .value_counts("cat")
+        .reset_index(name="appearances")
+    )
+
+    return dict(
+        status="OK",
+        total_rules=total_rules,
+        within_rules=within_rules,
+        cross_rules=cross_rules,
+        within_rate=(within_rules / total_rules) if total_rules else 0.0,
+        top_pairs=top_pairs,
+        top_pairs_by_lift=top_pairs_by_lift,
+        cat_counts=cat_counts,
+    )
+
+
 timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _cleanup_old_plot_dirs(current_plot_dir: str):
+    reports_dir = "reports"
+    try:
+        if not os.path.isdir(reports_dir):
+            return
+
+        for name in os.listdir(reports_dir):
+            if not name.startswith("plots_"):
+                continue
+            path = os.path.join(reports_dir, name)
+            if not os.path.isdir(path):
+                continue
+            if os.path.normpath(path) == os.path.normpath(current_plot_dir):
+                continue
+            shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        return
+
+plot_output_dir = f"reports/plots_{timestamp}"
+os.makedirs(plot_output_dir, exist_ok=True)
+os.environ["PLOT_OUTPUT_DIR"] = plot_output_dir
+
+_cleanup_old_plot_dirs(plot_output_dir)
+
+
+def _cleanup_old_sweep_artifacts():
+    try:
+        rules_dir = "data/processed"
+        runs_dir = "notebooks/runs"
+
+        exp_names = [e.get("name") for e in experiments if e.get("name") != "baseline"]
+        exp_re = "(?:" + "|".join(map(re.escape, exp_names)) + ")"
+
+        rules_pat = re.compile(rf"^rules_{exp_re}_\d{{8}}_\d{{6}}\.csv$")
+        nb_pat = re.compile(rf"^apriori_modelling_{exp_re}_\d{{8}}_\d{{6}}\.ipynb$")
+
+        if os.path.isdir(rules_dir):
+            for name in os.listdir(rules_dir):
+                if rules_pat.match(name):
+                    path = os.path.join(rules_dir, name)
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+
+        if os.path.isdir(runs_dir):
+            for name in os.listdir(runs_dir):
+                if nb_pat.match(name):
+                    path = os.path.join(runs_dir, name)
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+    except Exception:
+        return
+
+
+_cleanup_old_sweep_artifacts()
 
 baseline_params = dict(
     BASKET_BOOL_PATH="data/processed/basket_bool.parquet",
@@ -107,11 +259,23 @@ for exp in experiments:
     params.update(exp["overrides"])
 
     if exp_name == "baseline":
+        params.update(
+            dict(
+                PLOT_TOP_LIFT=True,
+                PLOT_TOP_CONF=True,
+                PLOT_SCATTER=True,
+                PLOT_NETWORK=True,
+                PLOT_PLOTLY_NETWORK=False,
+                PLOT_PLOTLY_SCATTER=False,
+            )
+        )
+
+    if exp_name == "baseline":
         rules_output_path = "data/processed/rules_apriori_filtered.csv"
         notebook_output_path = "notebooks/runs/apriori_modelling_run.ipynb"
     else:
-        rules_output_path = f"data/processed/sweeps/rules_{exp_name}_{timestamp}.csv"
-        notebook_output_path = f"notebooks/runs/sweeps/apriori_modelling_{exp_name}_{timestamp}.ipynb"
+        rules_output_path = f"data/processed/rules_{exp_name}.csv"
+        notebook_output_path = f"notebooks/runs/apriori_modelling_{exp_name}.ipynb"
     params["RULES_OUTPUT_PATH"] = rules_output_path
 
     status = "OK"
@@ -260,7 +424,132 @@ else:
             f"- **{s['name']}**: rules=`{s['rules_path']}`, notebook=`{s['notebook_path']}`"
         )
 
+# Category-level insight (Chủ đề 6) - phân tích trên baseline rules
+try:
+    baseline_rules_df = _read_rules_csv("data/processed/rules_apriori_filtered.csv")
+    cat_result = _category_insight_from_rules(baseline_rules_df)
+
+    lines.append("")
+    lines.append("## 5. Chủ đề 6: Nhóm sản phẩm (Category-level Insight)")
+    lines.append("")
+    lines.append("Ghi chú: danh mục được gán theo keyword từ `Description` (heuristic) để phục vụ phân tích nhanh.")
+
+    if cat_result.get("status") != "OK":
+        lines.append("")
+        lines.append(f"Không thể phân tích category-level insight (status={cat_result.get('status')}).")
+    else:
+        lines.append("")
+        lines.append(f"- Tổng số luật (baseline): **{cat_result['total_rules']}**")
+        lines.append(
+            f"- Luật trong cùng danh mục (within-category): **{cat_result['within_rules']}** ({cat_result['within_rate']*100:.1f}%)"
+        )
+        lines.append(
+            f"- Luật khác danh mục (cross-category): **{cat_result['cross_rules']}** ({(1-cat_result['within_rate'])*100:.1f}%)"
+        )
+
+        lines.append("")
+        lines.append("### 5.1. Nhóm danh mục xuất hiện nhiều (tần suất xuất hiện trong luật)")
+        lines.append("")
+        for _, r in cat_result["cat_counts"].head(8).iterrows():
+            lines.append(f"- **{r['cat']}**: {int(r['appearances'])}")
+
+        lines.append("")
+        lines.append("### 5.2. Top cặp danh mục theo số lượng luật")
+        lines.append("")
+        lines.append("| Antecedent category | Consequent category | #rules | avg_lift | avg_conf | median_support |")
+        lines.append("|---|---|---:|---:|---:|---:|")
+        for _, r in cat_result["top_pairs"].iterrows():
+            lines.append(
+                "| "
+                + str(r["ante_cat"])
+                + " | "
+                + str(r["cons_cat"])
+                + " | "
+                + str(int(r["n_rules"]))
+                + " | "
+                + f"{float(r['avg_lift']):.2f}"
+                + " | "
+                + f"{float(r['avg_conf']):.2f}"
+                + " | "
+                + f"{float(r['median_support']):.4f}"
+                + " |"
+            )
+
+        lines.append("")
+        lines.append("### 5.3. Top cặp danh mục theo avg_lift (lọc n_rules >= 5)")
+        lines.append("")
+        lines.append("| Antecedent category | Consequent category | #rules | avg_lift | avg_conf | median_support |")
+        lines.append("|---|---|---:|---:|---:|---:|")
+        for _, r in cat_result["top_pairs_by_lift"].iterrows():
+            lines.append(
+                "| "
+                + str(r["ante_cat"])
+                + " | "
+                + str(r["cons_cat"])
+                + " | "
+                + str(int(r["n_rules"]))
+                + " | "
+                + f"{float(r['avg_lift']):.2f}"
+                + " | "
+                + f"{float(r['avg_conf']):.2f}"
+                + " | "
+                + f"{float(r['median_support']):.4f}"
+                + " |"
+            )
+
+        lines.append("")
+        lines.append("### 5.4. Nhận định nhóm sản phẩm có tiềm năng marketing cao")
+        lines.append("")
+        lines.append("- Nhóm danh mục có nhiều luật within-category thường phù hợp để tạo **combo theo chủ đề** và trưng bày theo cụm.")
+        lines.append("- Các cặp danh mục cross-category có avg_lift cao gợi ý cơ hội **cross-sell giữa nhóm** (ví dụ: đồ gói quà đi kèm đồ trang trí/quà tặng).")
+except Exception:
+    pass
+
 with open(report_path, "w", encoding="utf-8") as f:
     f.write("\n".join(lines) + "\n")
 
-print(f"Đã chạy xong pipeline sweep. Report: {report_path}")
+viz_report_path = "VISUALIZATION_REPORT.md"
+viz_lines: list[str] = []
+viz_lines.append("# Trực quan hoá kết quả Apriori")
+viz_lines.append("")
+viz_lines.append(f"Thời điểm chạy: `{timestamp}`")
+viz_lines.append("")
+viz_lines.append("Các biểu đồ được lưu tự động tại:")
+viz_lines.append("")
+viz_lines.append(f"- `{plot_output_dir}`")
+viz_lines.append("")
+viz_lines.append("## 1. Bar chart: Top luật theo Lift")
+viz_lines.append("")
+viz_lines.append(f"![Top rules by lift]({plot_output_dir}/bar_top_rules_by_lift.png)")
+viz_lines.append("")
+viz_lines.append("**Diễn giải ý nghĩa**")
+viz_lines.append("")
+viz_lines.append("- Lift đo mức độ mối quan hệ mạnh hơn ngẫu nhiên giữa vế trái và vế phải của luật.")
+viz_lines.append("- Bar chart này giúp chọn các luật có lift cao để ưu tiên cho gợi ý mua kèm / combo / trưng bày gần nhau.")
+viz_lines.append("- Khi đọc biểu đồ, nên kiểm tra thêm support để tránh chọn luật quá hiếm (khó áp dụng rộng).")
+viz_lines.append("")
+viz_lines.append("## 2. Scatter plot: Support vs Confidence (màu = Lift)")
+viz_lines.append("")
+viz_lines.append(f"![Support vs confidence]({plot_output_dir}/scatter_support_confidence_lift.png)")
+viz_lines.append("")
+viz_lines.append("**Diễn giải ý nghĩa**")
+viz_lines.append("")
+viz_lines.append("- Support cho biết luật xuất hiện thường xuyên đến mức nào trong toàn bộ hoá đơn (tính phổ biến).")
+viz_lines.append("- Confidence cho biết xác suất mua vế phải khi đã mua vế trái (tính chắc chắn).")
+viz_lines.append("- Màu (Lift) cho biết mức độ liên hệ vượt ngẫu nhiên; điểm càng đậm/thể hiện lift cao càng đáng chú ý.")
+viz_lines.append("- Nhóm điểm ở vùng support vừa phải + confidence cao thường phù hợp để triển khai recommendation trên website/checkout.")
+viz_lines.append("")
+viz_lines.append("## 3. Network graph: Mạng lưới luật (antecedent → consequent)")
+viz_lines.append("")
+viz_lines.append(f"![Network rules]({plot_output_dir}/network_rules.png)")
+viz_lines.append("")
+viz_lines.append("**Diễn giải ý nghĩa**")
+viz_lines.append("")
+viz_lines.append("- Node là sản phẩm, cạnh có hướng thể hiện luật A → B.")
+viz_lines.append("- Cụm node dày đặc gợi ý nhóm sản phẩm hay mua cùng, hữu ích cho bố trí kệ hàng hoặc tạo bộ combo.")
+viz_lines.append("- Node có nhiều liên kết có thể xem như sản phẩm ‘hub’, phù hợp đặt ở vị trí nổi bật hoặc làm anchor cho cross-sell.")
+
+with open(viz_report_path, "w", encoding="utf-8") as f:
+    f.write("\n".join(viz_lines) + "\n")
+
+print(f"Đã chạy xong pipeline sweep. Report: {report_path}. Viz report: {viz_report_path}")

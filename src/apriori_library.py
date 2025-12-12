@@ -455,6 +455,20 @@ class DataVisualizer:
         plt.style.use("seaborn-v0_8-whitegrid")
         sns.set_palette("viridis")
 
+    @staticmethod
+    def _get_plot_output_dir() -> str | None:
+        out_dir = os.getenv("PLOT_OUTPUT_DIR")
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        return out_dir
+
+    def _maybe_savefig(self, filename: str):
+        out_dir = self._get_plot_output_dir()
+        if not out_dir:
+            return
+        path = os.path.join(out_dir, filename)
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+
     def plot_revenue_over_time(self, df):
         """
         Plot daily and monthly revenue patterns.
@@ -714,6 +728,7 @@ class DataVisualizer:
         plt.xlabel(sort_by.capitalize())
         plt.ylabel("Luật (antecedent → consequent)")
         plt.tight_layout()
+        self._maybe_savefig(f"bar_top_rules_by_{sort_by}.png")
         plt.show()
 
     def plot_top_rules_lift(
@@ -797,6 +812,7 @@ class DataVisualizer:
         plt.ylabel("Confidence")
         plt.title(title)
         plt.tight_layout()
+        self._maybe_savefig("scatter_support_confidence_lift.png")
         plt.show()
 
     def plot_pairwise_lift_heatmap(
@@ -993,4 +1009,5 @@ class DataVisualizer:
         plt.title(title)
         plt.axis("off")
         plt.tight_layout()
+        self._maybe_savefig("network_rules.png")
         plt.show()

@@ -20,6 +20,7 @@ Phân tích dữ liệu bán lẻ để tìm ra mối quan hệ giữa các sả
   - network graph
   - interactive Plotly
 - Tự động hóa pipeline bằng **Papermill**
+- Category-level Insight (Chủ đề 6): gán danh mục sản phẩm (heuristic theo keyword) và so sánh kết hợp within-category vs cross-category
 
 ---
 
@@ -34,8 +35,7 @@ DataMiningWeek1/
 │       ├── cleaned_uk_data.csv
 │       ├── basket_bool.parquet
 │       ├── rules_apriori_filtered.csv
-│       └── sweeps/
-│           └── rules_<experiment>_<timestamp>.csv
+│       └── rules_<experiment>.csv
 │
 ├── notebooks/
 │   ├── preprocessing_and_eda.ipynb
@@ -45,14 +45,14 @@ DataMiningWeek1/
 │       ├── preprocessing_and_eda_run.ipynb
 │       ├── basket_preparation_run.ipynb
 │       ├── apriori_modelling_run.ipynb
-│       └── sweeps/
-│           └── apriori_modelling_<experiment>_<timestamp>.ipynb
+│       └── apriori_modelling_<experiment>.ipynb
 │
 ├── src/
 │   └── apriori_library.py
 │
 ├── run_papermill.py
 ├── PARAMETER_SWEEP_REPORT.md
+├── VISUALIZATION_REPORT.md
 ├── requirements.txt
 └── README.md
 ```
@@ -101,8 +101,8 @@ notebooks/runs/apriori_modelling_run.ipynb
 Kết quả sweep (theo từng cấu hình) được lưu vào:
 
 ```bash
-data/processed/sweeps/
-notebooks/runs/sweeps/
+data/processed/rules_<experiment>.csv
+notebooks/runs/apriori_modelling_<experiment>.ipynb
 ```
 
 File báo cáo tổng hợp sweep:
@@ -110,6 +110,12 @@ File báo cáo tổng hợp sweep:
 ```bash
 PARAMETER_SWEEP_REPORT.md
 ```
+
+Trong báo cáo này có thêm mục **Chủ đề 6: Nhóm sản phẩm (Category-level Insight)** gồm:
+
+- So sánh tỷ lệ luật **trong cùng danh mục** vs **khác danh mục**
+- Top cặp danh mục theo số lượng luật và các chỉ số (avg_lift, avg_conf, median_support)
+- Nhận định danh mục có tiềm năng marketing cao
 
 ### Changing Parameters
 Các tham số sweep đã được cấu hình sẵn trong `run_papermill.py` (mục `experiments`).
